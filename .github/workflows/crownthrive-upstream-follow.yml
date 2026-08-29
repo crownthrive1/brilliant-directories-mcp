@@ -1,0 +1,192 @@
+name: CrownThrive — Brilliant Directories Upstream Follow
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: crownthrive-bd-upstream-follow
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: brilliantdirectories/brilliant-directories-mcp
+  SYNC_BRANCH_PREFIX: penta/upstream-sync
+
+jobs:
+  reconcile-upstream-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CrownThrive fork
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fetch official upstream main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git" 2>/dev/null || git remote set-url upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags upstream main
+          git fetch --no-tags origin main
+
+      - name: Classify upstream drift
+        id: drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPSTREAM_SHA="$(git rev-parse upstream/main)"
+          FORK_SHA="$(git rev-parse origin/main)"
+          echo "upstream_sha=${UPSTREAM_SHA}" >> "$GITHUB_OUTPUT"
+          echo "fork_sha=${FORK_SHA}" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor upstream/main origin/main; then
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            echo "Official upstream main is already contained by the CrownThrive fork."
+          else
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            echo "New upstream commits require governed reconciliation."
+          fi
+
+      - name: Record in-sync receipt
+        if: steps.drift.outputs.drift == 'false'
+        shell: bash
+        run: |
+          {
+            echo "## CrownThrive BD upstream receipt"
+            echo "- disposition: in_sync"
+            echo "- upstream: ${UPSTREAM_REPOSITORY}@${{ steps.drift.outputs.upstream_sha }}"
+            echo "- fork: ${GITHUB_REPOSITORY}@${{ steps.drift.outputs.fork_sha }}"
+            echo "- authority_created: false"
+            echo "- execution_authority: ct.locticians.brilliant-directories.api-fabric.v3"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare governed sync branch
+        if: steps.drift.outputs.drift == 'true'
+        id: prepare
+        shell: bash
+        env:
+          UPSTREAM_SHA: ${{ steps.drift.outputs.upstream_sha }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${UPSTREAM_SHA:0:12}"
+          BRANCH="${SYNC_BRANCH_PREFIX}-${SHORT_SHA}"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "existing=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "existing=false" >> "$GITHUB_OUTPUT"
+
+          git config user.name "CrownThrive PentaUpdate"
+          git config user.email "contact@crownthrive.com"
+          git checkout -b "$BRANCH" origin/main
+
+          set +e
+          git merge --no-ff --no-edit upstream/main
+          MERGE_RC=$?
+          set -e
+          if [ "$MERGE_RC" -ne 0 ]; then
+            git merge --abort || true
+            echo "merge_conflict=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "merge_conflict=false" >> "$GITHUB_OUTPUT"
+
+      - name: Open conflict incident
+        if: steps.drift.outputs.drift == 'true' && steps.prepare.outputs.existing == 'false' && steps.prepare.outputs.merge_conflict == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_SHA: ${{ steps.drift.outputs.upstream_sha }}
+        run: |
+          set -euo pipefail
+          TITLE="[PentaUpdate] Brilliant Directories upstream merge conflict"
+          EXISTING="$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')"
+          BODY=$(cat <<EOF
+          Official Brilliant Directories upstream main cannot be merged cleanly into the CrownThrive fork.
+
+          - upstream_sha: ${UPSTREAM_SHA}
+          - fork_sha: ${{ steps.drift.outputs.fork_sha }}
+          - execution authority remains: ct.locticians.brilliant-directories.api-fabric.v3
+          - provider credentials: not read or projected
+          - automatic direct merge: prohibited
+
+          PentaUpdate/PentaAssure must reconcile the conflict on a governed branch before promotion.
+          EOF
+          )
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
+          exit 1
+
+      - name: Verify merged upstream candidate
+        if: steps.drift.outputs.drift == 'true' && steps.prepare.outputs.existing == 'false' && steps.prepare.outputs.merge_conflict == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f SKILL.md
+          test -f README.md
+          test -f mcp/package.json
+          test -f mcp/package-lock.json
+          npm ci --prefix mcp
+          npm test --prefix mcp
+          git diff --check origin/main...HEAD
+
+      - name: Push governed sync branch
+        if: steps.drift.outputs.drift == 'true' && steps.prepare.outputs.existing == 'false' && steps.prepare.outputs.merge_conflict == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:${{ steps.prepare.outputs.branch }}"
+
+      - name: Open upstream sync pull request
+        if: steps.drift.outputs.drift == 'true' && steps.prepare.outputs.existing == 'false' && steps.prepare.outputs.merge_conflict == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_SHA: ${{ steps.drift.outputs.upstream_sha }}
+        run: |
+          set -euo pipefail
+          gh pr create \
+            --base main \
+            --head "${{ steps.prepare.outputs.branch }}" \
+            --title "chore(upstream): reconcile Brilliant Directories ${UPSTREAM_SHA:0:12}" \
+            --body "$(cat <<EOF
+          Automated CrownThrive upstream-follow reconciliation.
+
+          - official upstream: ${UPSTREAM_REPOSITORY}@${UPSTREAM_SHA}
+          - prior fork main: ${{ steps.drift.outputs.fork_sha }}
+          - sync mode: merge-preserving CrownThrive overlays
+          - verification: npm ci + npm test + git diff --check
+          - direct/force merge: not performed
+          - provider credentials: not read or projected
+          - reference authority: false
+          - CrownThrive execution authority remains: ct.locticians.brilliant-directories.api-fabric.v3
+
+          Penta governance may merge only after repository checks remain green.
+          EOF
+          )"
+
+      - name: Record drift receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## CrownThrive BD upstream-follow receipt"
+            echo "- observed_at_utc: $(date -u +%FT%TZ)"
+            echo "- upstream_sha: ${{ steps.drift.outputs.upstream_sha }}"
+            echo "- fork_sha: ${{ steps.drift.outputs.fork_sha }}"
+            echo "- drift: ${{ steps.drift.outputs.drift }}"
+            echo "- sync_branch: ${{ steps.prepare.outputs.branch }}"
+            echo "- authority_created: false"
+            echo "- reference_execution_authority: false"
+            echo "- V3 execution authority preserved"
+          } >> "$GITHUB_STEP_SUMMARY"
