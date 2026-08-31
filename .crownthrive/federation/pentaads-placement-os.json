@@ -1,0 +1,48 @@
+{
+  "contract": "ct.repository-federation.binding.v1",
+  "binding_id": "ct.binding.brilliant-directories-mcp.pentaads-placement-os",
+  "consumer": "github:crownthrive1/brilliant-directories-mcp",
+  "source_authority": "github:crownthrive1/PentaAds-Placement-OS",
+  "source_visibility": "private",
+  "package_id": "ct.package.pentaads-placement-os",
+  "package_name": "@crownthrive/pentaads-placement-os",
+  "package_version": "0.2.0",
+  "exact_source_sha": "d40ef4a3b4e4eba7b136447d54abf661f0060414",
+  "source_import_policy": "reference_only_no_private_source_copy",
+  "state_authority": "ThriveBase",
+  "adapter_contract": "ct.pentaads.brilliant-directories.runtime.v1",
+  "adapter_version": "1.0.0",
+  "authority_ceiling": "D2",
+  "d3_autonomous": false,
+  "provider_mutation": false,
+  "secret_values_in_binding": false,
+  "certification": {
+    "state": "PASS_WITH_INSTALLATION_HOLD",
+    "certification_id": "9bd8bd6f-fb67-4304-a802-d003354d6b48",
+    "evidence_sha256": "241dd06cfea5fa4564f5e46ba94306b42aa9a3183fba2d328136b2ef4447849f",
+    "installation_state": "HOLD_BD_TEMPLATE_WRITE_AUTHORITY"
+  },
+  "locticians": {
+    "provider_site_id": 27990,
+    "active_zone_count": 24,
+    "provider_code_artifact_count": 24,
+    "publisher_share": 0.70,
+    "network_share": 0.30,
+    "live_template_mutation": false
+  },
+  "allowed_usage": [
+    "discover_bd_capability",
+    "read_bd_source_authority",
+    "prepare_placement_contract",
+    "validate_manifest",
+    "return_installation_hold",
+    "register_readback"
+  ],
+  "prohibited_usage": [
+    "copy_private_runtime_source_into_public_repo",
+    "fabricate_bd_template_write_authority",
+    "activate_campaign_spend",
+    "move_money",
+    "expose_secrets"
+  ]
+}
