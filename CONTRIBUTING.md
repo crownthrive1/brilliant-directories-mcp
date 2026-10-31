@@ -42,6 +42,30 @@ BD_API_KEY=your-key-here \
 node index.js
 ```
 
+Run the credential-independent regression suite from the repository root:
+
+```bash
+npm ci --prefix mcp
+npm test --prefix mcp
+```
+
+This exercises the actual stdio server's initialization and generated tool catalog,
+invalid-input handling, and malformed-spec rejection. Child processes use inert test
+configuration with a fail-closed network guard; no real provider credentials are
+read or needed. The upstream-follow workflow uses this offline suite.
+
+Live credential verification remains a separate, explicit integration check:
+
+```bash
+# Supply existing credentials locally for an authorized non-production site.
+npm run test:integration --prefix mcp
+```
+
+This command still runs `node index.js --verify`, contacts `/api/v2/token/verify`,
+and fails if credentials are missing or invalid. An offline pass does not establish
+provider connectivity, API authorization, or production readiness. Never add a live
+key to upstream-follow CI just to make its offline validation pass.
+
 Test against a non-production BD site. Never commit credentials.
 
 ## Code of conduct
