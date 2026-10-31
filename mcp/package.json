@@ -47,8 +47,9 @@
     "url": "https://github.com/brilliantdirectories/brilliant-directories-mcp/issues"
   },
   "scripts": {
-    "test": "node index.js --verify",
-    "start": "node index.js"
+    "test": "node --test test/*.test.js",
+    "start": "node index.js",
+    "test:integration": "node index.js --verify"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
